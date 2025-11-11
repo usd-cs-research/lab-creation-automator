@@ -14,11 +14,11 @@ def read_user_data(file_path: str) -> list[dict[str, str]]:
             for row in reader:
                 # Store the relevant columns for processing
                 users.append({
-                    'last_name': row['last name'],
-                    'first_name': row['first name'],
-                    'username': row['username'],
-                    'gh_username': row['github username'],
-                    'section_number': row['section number']
+                    'last_name': row['last name'].strip(),
+                    'first_name': row['first name'].strip(),
+                    'username': row['username'].strip(),
+                    'gh_username': row['github username'].strip(),
+                    'section_number': row['section number'].strip()
                 })
         return users
     except FileNotFoundError:
@@ -50,39 +50,49 @@ def setup_arg_parser() -> argparse.Namespace:
         required=True,
         help='Path to the CSV file containing user data.'
     )
+    parser.add_argument(
+        '--source',
+        type=str,
+        required=True,
+        help='Path to the directory containing the starter git repo.'
+    )
     return parser.parse_args()
 
 
 
-def create_gh_repo(repo_dir: str, repo_name: str, gh_username: str, owner: Optional[str] = None):
-    full_repo_name = f'{owner}/{repo_name}' if owner is not None else repo_name
-
-    command: list[str] = ['gh', 'repo', 'create', full_repo_name, '--private',
-                          f'--source={repo_dir}']
-
-    add_collab_command = ['gh', 'api', '--method', 'PUT',
-                          f'repos/{full_repo_name}/collaborators/{gh_username}',
-                          '-f', "permission='push'"]
-
+def run_command(command: str) -> bool:
+    print(' '.join(command))
     try:
-        print(' '.join(command))
-        print(' '.join(add_collab_command))
-
         # Run the command and capture its output
-        """
         result: subprocess.CompletedProcess[str] = subprocess.run(
             command,
             check=True,  # Raise an error for non-zero exit codes
             capture_output=True,
             text=True
         )
-        print(f"Success for {repo_name}: {result.stdout.strip()}")
-        """
+        print(f"Success: {result.stdout.strip()}")
+        return True
 
-    except subprocess.CalledProcessError as e:
-        print(f"Command failed for {repo_name}. Stderr: {e.stderr.strip()}")
-    except FileNotFoundError:
-        print(f"Error: External program not found.")
+    except Exception as e:
+        print(f"Failed: {e.stderr.strip()}")
+        return False
+
+
+
+def create_gh_repo(source_dir: str, full_repo_name: str, usd_username: str, gh_username: str):
+
+    command: list[str] = ['gh', 'repo', 'create', full_repo_name, '--private',
+                          f'--source={source_dir}', '--push',
+                          f'--remote=gh_{usd_username}']
+
+    ok = run_command(command)
+
+    if ok:
+        add_collab_command = ['gh', 'api', '--method', 'PUT',
+                              f'repos/{full_repo_name}/collaborators/{gh_username}',
+                              '-f', "permission=push"]
+
+        run_command(add_collab_command)
 
 
 def main():
@@ -91,7 +101,9 @@ def main():
 
     for user in user_data:
         repo_name = f"comp110-{args.semester}-s{user['section_number'].zfill(2)}-{user['username']}"
-        create_gh_repo('lab12', repo_name, user['gh_username'], args.owner)
+        full_repo_name = f'{args.owner}/{repo_name}' if args.owner is not None else repo_name
+
+        create_gh_repo(args.source, full_repo_name, user['username'], user['gh_username'])
 
 
 if __name__ == "__main__":
